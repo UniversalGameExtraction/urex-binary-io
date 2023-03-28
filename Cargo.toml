@@ -3,12 +3,12 @@ name = "urex-binary-io"
 version = "0.1.0"
 edition = "2021"
 authors = ["Rudolf Kolbe <rkolbe96@gmail.com>"]
-description — Implementation of an endianed BinaryReaders for use in urex.
-documentation — URL of the package documentation.
-readme — "README.md"
-homepage — TODO
-repository — https://github.com/UnityRustEXtractor/urex-binary-io
-license — MIT
+description = "Implementation of an endianed BinaryReaders for use in urex."
+documentation = "TODO"
+readme = "README.md"
+homepage = "TODO"
+repository = "https://github.com/UnityRustEXtractor/urex-binary-io"
+license = "MIT"
 exclude = [".git*"]
 
 [dependencies]
