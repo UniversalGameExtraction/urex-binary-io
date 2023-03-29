@@ -1,6 +1,6 @@
 [package]
 name = "urex-binary-io"
-version = "0.1.0"
+version = "0.1.1"
 rust-version = "1.61"
 edition = "2021"
 authors = ["Rudolf Kolbe <rkolbe96@gmail.com>"]
