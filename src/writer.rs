@@ -3,47 +3,90 @@ use std::io::{Result, Seek, Write};
 
 use crate::Endian;
 
-pub trait BinaryWriter {
-    // fn align(&mut self, alignment: usize) -> Result<()>;
-
+pub trait BinaryWrite {
+    /// Writes a bool to the internal stream.  
     fn write_bool(&mut self, value: bool) -> Result<()>;
+    /// Writes a char to the internal stream.
     fn write_char(&mut self, value: char) -> Result<()>;
 
+    /// Writes a u8 to the internal stream.
     fn write_u8(&mut self, value: u8) -> Result<()>;
+    /// Writes a u16 to the internal stream.
     fn write_u16(&mut self, value: u16) -> Result<()>;
+    /// Writes a u32 to the internal stream.
     fn write_u32(&mut self, value: u32) -> Result<()>;
+    /// Writes a u64 to the internal stream.
     fn write_u64(&mut self, value: u64) -> Result<()>;
 
+    /// Writes a i8 to the internal stream.
     fn write_i8(&mut self, value: i8) -> Result<()>;
+    /// Writes a i16 to the internal stream.
     fn write_i16(&mut self, value: i16) -> Result<()>;
+    /// Writes a i32 to the internal stream.
     fn write_i32(&mut self, value: i32) -> Result<()>;
+    /// Writes a i64 to the internal stream.
     fn write_i64(&mut self, value: i64) -> Result<()>;
 
+    /// Writes a f16 to the internal stream.
     fn write_f16(&mut self, value: f32) -> Result<()>;
+    /// Writes a f32 to the internal stream.
     fn write_f32(&mut self, value: f32) -> Result<()>;
+    /// Writes a f64 to the internal stream.
     fn write_f64(&mut self, value: f64) -> Result<()>;
 
+    /// Writes a str as c-string (null-terminated) to the internal stream.
     fn write_cstr(&mut self, value: &str) -> Result<()>;
+    /// Writes a str to the internal stream. If `write_len` is `Some(true)`, the length of the string will be written before the string itself.
     fn write_str(&mut self, value: &str, write_len: Option<bool>) -> Result<()>;
+    /// Writes a byte slice to the internal stream. If `write_len` is `Some(true)`, the length of the byte slice will be written before the byte slice itself.
     fn write_bytes(&mut self, value: &[u8], write_len: Option<bool>) -> Result<()>;
 
+    /// Writes a bool array to the internal stream. If `write_len` is `Some(true)`, the length of the array will be written before the array itself.
     fn write_bool_array(&mut self, value: Vec<bool>, write_len: Option<bool>) -> Result<()>;
+    /// Writes a char array to the internal stream. If `write_len` is `Some(true)`, the length of the array will be written before the array itself.
     fn write_char_array(&mut self, value: Vec<char>, write_len: Option<bool>) -> Result<()>;
+    /// Writes a u8 array to the internal stream. If `write_len` is `Some(true)`, the length of the array will be written before the array itself.
     fn write_u8_array(&mut self, value: Vec<u8>, write_len: Option<bool>) -> Result<()>;
+    /// Writes a u16 array to the internal stream. If `write_len` is `Some(true)`, the length of the array will be written before the array itself.
     fn write_u16_array(&mut self, value: Vec<u16>, write_len: Option<bool>) -> Result<()>;
+    /// Writes a u32 array to the internal stream. If `write_len` is `Some(true)`, the length of the array will be written before the array itself.
     fn write_u32_array(&mut self, value: Vec<u32>, write_len: Option<bool>) -> Result<()>;
+    /// Writes a u64 array to the internal stream. If `write_len` is `Some(true)`, the length of the array will be written before the array itself.
     fn write_u64_array(&mut self, value: Vec<u64>, write_len: Option<bool>) -> Result<()>;
+    /// Writes a i8 array to the internal stream. If `write_len` is `Some(true)`, the length of the array will be written before the array itself.
     fn write_i8_array(&mut self, value: Vec<i8>, write_len: Option<bool>) -> Result<()>;
+    /// Writes a i16 array to the internal stream. If `write_len` is `Some(true)`, the length of the array will be written before the array itself.
     fn write_i16_array(&mut self, value: Vec<i16>, write_len: Option<bool>) -> Result<()>;
+    /// Writes a i32 array to the internal stream. If `write_len` is `Some(true)`, the length of the array will be written before the array itself.
     fn write_i32_array(&mut self, value: Vec<i32>, write_len: Option<bool>) -> Result<()>;
+    /// Writes a i64 array to the internal stream. If `write_len` is `Some(true)`, the length of the array will be written before the array itself.
     fn write_i64_array(&mut self, value: Vec<i64>, write_len: Option<bool>) -> Result<()>;
+    /// Writes a f16 array to the internal stream. If `write_len` is `Some(true)`, the length of the array will be written before the array itself.
     fn write_f16_array(&mut self, value: Vec<f32>, write_len: Option<bool>) -> Result<()>;
+    /// Writes a f32 array to the internal stream. If `write_len` is `Some(true)`, the length of the array will be written before the array itself.
     fn write_f32_array(&mut self, value: Vec<f32>, write_len: Option<bool>) -> Result<()>;
+    /// Writes a f64 array to the internal stream. If `write_len` is `Some(true)`, the length of the array will be written before the array itself.
     fn write_f64_array(&mut self, value: Vec<f64>, write_len: Option<bool>) -> Result<()>;
-
+    /// Writes a str array as c-strings (null-terminated) to the internal stream. If `write_len` is `Some(true)`, the length of the array will be written before the array itself.
     fn write_cstr_array(&mut self, value: Vec<&str>, write_len: Option<bool>) -> Result<()>;
+    /// Writes a str array to the internal stream. If `write_len` is `Some(true)`, the length of the array will be written before the array itself.
     fn write_str_array(&mut self, value: Vec<&str>, write_len: Option<bool>) -> Result<()>;
+    /// Writes a byte slice array to the internal stream. If `write_len` is `Some(true)`, the length of the array will be written before the array itself.
     fn write_bytes_array(&mut self, value: Vec<&[u8]>, write_len: Option<bool>) -> Result<()>;
+}
+
+pub trait BinaryWriteAlign: BinaryWrite + Seek {
+    /// Align the reader to the given alignment.
+    fn align(&mut self, alignment: usize) -> Result<()>;
+    fn align4(&mut self) -> Result<()> {
+        self.align(4)
+    }
+    fn align8(&mut self) -> Result<()> {
+        self.align(8)
+    }
+    fn align16(&mut self) -> Result<()> {
+        self.align(16)
+    }
 }
 
 macro_rules! build_write_array_fn {
@@ -168,7 +211,7 @@ impl<W: Write> BinaryWriterVE<W> {
     }
 }
 
-impl<W: Write> BinaryWriter for BinaryWriterVE<W> {
+impl<W: Write> BinaryWrite for BinaryWriterVE<W> {
     write_fn_generic!();
     build_write_fn_ve!(u8);
     build_write_fn_ve!(u16);
@@ -214,7 +257,7 @@ impl<W: Write> BinaryWriterBE<W> {
     }
 }
 
-impl<W: Write> BinaryWriter for BinaryWriterBE<W> {
+impl<W: Write> BinaryWrite for BinaryWriterBE<W> {
     write_fn_generic!();
     build_write_fn_be!(u8);
     build_write_fn_be!(u16);
@@ -261,7 +304,7 @@ impl<W: Write> BinaryWriterLE<W> {
     }
 }
 
-impl<W: Write> BinaryWriter for BinaryWriterLE<W> {
+impl<W: Write> BinaryWrite for BinaryWriterLE<W> {
     write_fn_generic!();
     build_write_fn_le!(u8);
     build_write_fn_le!(u16);
@@ -308,7 +351,7 @@ build_align_fn!(BinaryWriterVE);
 #[cfg(test)]
 mod tests {
     use super::*;
-    fn write_unsigned(writer: &mut impl (BinaryWriter)) -> Result<()> {
+    fn write_unsigned(writer: &mut impl (BinaryWrite)) -> Result<()> {
         writer.write_u8(0x1 as u8)?;
         writer.write_u16(0x1234 as u16)?;
         writer.write_u32(0x12345678 as u32)?;
@@ -316,7 +359,7 @@ mod tests {
         Ok(())
     }
 
-    fn write_signed(writer: &mut dyn BinaryWriter) -> Result<()> {
+    fn write_signed(writer: &mut dyn BinaryWrite) -> Result<()> {
         writer.write_i8(0x1 as i8)?;
         writer.write_i16(-0x1234 as i16)?;
         writer.write_i32(0x12345678 as i32)?;
@@ -324,7 +367,7 @@ mod tests {
         Ok(())
     }
 
-    fn write_float(writer: &mut dyn BinaryWriter) -> Result<()> {
+    fn write_float(writer: &mut dyn BinaryWrite) -> Result<()> {
         writer.write_f16(0.16)?;
         writer.write_f32(-0.32)?;
         writer.write_f64(0.64)?;
