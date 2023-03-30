@@ -1,326 +1,253 @@
+use byteorder::{BigEndian, LittleEndian, ReadBytesExt};
 use half::f16;
 use std::io::{Read, Result, Seek};
 
 use crate::Endian;
 
-pub trait BinaryReader {
-    fn read_bool(&mut self) -> Result<bool>;
-    fn read_char(&mut self) -> Result<char>;
-
-    fn read_u8(&mut self) -> Result<u8>;
-    fn read_u16(&mut self) -> Result<u16>;
-    fn read_u32(&mut self) -> Result<u32>;
-    fn read_u64(&mut self) -> Result<u64>;
-
-    fn read_i8(&mut self) -> Result<i8>;
-    fn read_i16(&mut self) -> Result<i16>;
-    fn read_i32(&mut self) -> Result<i32>;
-    fn read_i64(&mut self) -> Result<i64>;
-
-    fn read_f16(&mut self) -> Result<f32>;
-    fn read_f32(&mut self) -> Result<f32>;
-    fn read_f64(&mut self) -> Result<f64>;
-
-    fn read_cstr(&mut self) -> Result<String>;
-
-    fn read_str(&mut self, len: Option<usize>) -> Result<String>;
-    fn read_bytes(&mut self, len: Option<usize>) -> Result<Vec<u8>>;
-
-    fn read_bool_array(&mut self, len: Option<usize>) -> Result<Vec<bool>>;
-    fn read_char_array(&mut self, len: Option<usize>) -> Result<Vec<char>>;
-    fn read_u8_array(&mut self, len: Option<usize>) -> Result<Vec<u8>>;
-    fn read_u16_array(&mut self, len: Option<usize>) -> Result<Vec<u16>>;
-    fn read_u32_array(&mut self, len: Option<usize>) -> Result<Vec<u32>>;
-    fn read_u64_array(&mut self, len: Option<usize>) -> Result<Vec<u64>>;
-    fn read_i8_array(&mut self, len: Option<usize>) -> Result<Vec<i8>>;
-    fn read_i16_array(&mut self, len: Option<usize>) -> Result<Vec<i16>>;
-    fn read_i32_array(&mut self, len: Option<usize>) -> Result<Vec<i32>>;
-    fn read_i64_array(&mut self, len: Option<usize>) -> Result<Vec<i64>>;
-    fn read_f16_array(&mut self, len: Option<usize>) -> Result<Vec<f32>>;
-    fn read_f32_array(&mut self, len: Option<usize>) -> Result<Vec<f32>>;
-    fn read_f64_array(&mut self, len: Option<usize>) -> Result<Vec<f64>>;
-    fn read_cstr_array(&mut self, len: Option<usize>) -> Result<Vec<String>>;
-    fn read_str_array(&mut self, len: Option<usize>) -> Result<Vec<String>>;
-    fn read_bytes_array(&mut self, len: Option<usize>) -> Result<Vec<Vec<u8>>>;
-}
-
-macro_rules! build_read_array_fn {
-    ($name:ident, $func:ident, $type:ty) => {
-        fn $name(&mut self, len: Option<usize>) -> Result<Vec<$type>> {
-            let array_len;
-            if len.is_none() {
-                array_len = self.read_u32()? as usize;
-            } else {
-                array_len = len.unwrap();
+macro_rules! read_method{
+    (array $typ:ty, $size:expr) => {
+        paste::item! {
+            #[doc = "Reads an array of [`" $typ "`]s (" $size " byte(s) each). If len is none the reader will determine the length by reading it."]
+            fn [< read_ $typ _array >] (&mut self, len: Option<usize>) -> Result<Vec<$typ>>{
+                let len = len.unwrap_or_else(|| self.read_array_len().unwrap());
+                Ok(
+                    (0..len)
+                        .map(|_| self.[< read_ $typ >]())
+                        .collect::<Result<Vec<$typ>>>()?
+                )
             }
-            let mut buf: Vec<$type> = Vec::with_capacity(array_len);
-            for i in 0..array_len {
-                buf[i] = self.$func()?;
-            }
-            Ok(buf)
         }
+    };
+
+    ($typ:ty, $size:expr) => {
+        paste::item! {
+            #[doc = "Reads a [`" $typ "`] (" $size " byte(s))."]
+            fn [< read_ $typ >] (&mut self) -> Result<$typ>;
+        }
+
+        read_method!(array $typ, $size);
     };
 }
 
-macro_rules! build_read_array_fn_arg {
-    ($name:ident, $func:ident, $type:ty) => {
-        fn $name(&mut self, len: Option<usize>) -> Result<Vec<$type>> {
-            let array_len;
-            if len.is_none() {
-                array_len = self.read_u32()? as usize;
-            } else {
-                array_len = len.unwrap();
+pub trait BinaryRead {
+    /// Reads a bool (1 byte).
+    fn read_bool(&mut self) -> Result<bool> {
+        Ok(self.read_u8()? == 1)
+    }
+    read_method!(array bool, 1);
+
+    /// Reads a char (1 byte).
+    fn read_char(&mut self) -> Result<char> {
+        Ok(self.read_u8()? as char)
+    }
+    read_method!(array char, 1);
+
+    read_method!(u8, 1);
+    read_method!(u16, 2);
+    read_method!(u32, 4);
+    read_method!(u64, 8);
+
+    read_method!(i8, 1);
+    read_method!(i16, 2);
+    read_method!(i32, 4);
+    read_method!(i64, 8);
+
+    /// Reads a [`f16`] (2 bytes).
+    fn read_f16(&mut self) -> Result<f32> {
+        Ok(f16::from_bits(self.read_u16()?).to_f32())
+    }
+    /// Reads an array of [`f16`]s (2 byte(s) each). If len is none the reader will determine the length by reading it.
+    fn read_f16_array(&mut self, len: Option<usize>) -> Result<Vec<f32>> {
+        let len = len.unwrap_or_else(|| self.read_array_len().unwrap());
+        // use read_u16_array to benefit from the byteorder read optimizations
+        Ok(self
+            .read_u16_array(Some(len))?
+            .iter()
+            .map(|x| f16::from_bits(*x).to_f32())
+            .collect())
+    }
+
+    read_method!(f32, 4);
+    read_method!(f64, 8);
+
+    /// Reads a c-string (null terminated string).
+    fn read_cstr(&mut self) -> Result<String> {
+        let mut bytes = Vec::new();
+        loop {
+            let byte = self.read_u8()?;
+            if byte == 0 {
+                break;
             }
-            let mut buf: Vec<$type> = Vec::with_capacity(array_len);
-            for i in 0..array_len {
-                buf[i] = self.$func(None)?;
-            }
-            Ok(buf)
+            bytes.push(byte);
         }
-    };
+        Ok(String::from_utf8(bytes).unwrap())
+    }
+
+    /// Reads a string. If len is none the reader will determine the length by reading it.
+    fn read_str(&mut self, len: Option<usize>) -> Result<String> {
+        Ok(String::from_utf8(self.read_bytes(len)?).unwrap())
+    }
+    /// Reads bytes as `Vec<u8>`. If len is none the reader will determine the length by reading it.
+    fn read_bytes(&mut self, len: Option<usize>) -> Result<Vec<u8>> {
+        self.read_u8_array(len)
+    }
+
+    /// Reads the length for an array.
+    fn read_array_len(&mut self) -> Result<usize>;
+
+    /// Reads an array of c-strings. If len is none the reader will determine the length by reading it.
+    fn read_cstr_array(&mut self, len: Option<usize>) -> Result<Vec<String>> {
+        let len = len.unwrap_or_else(|| self.read_array_len().unwrap());
+        Ok((0..len)
+            .map(|_| self.read_cstr())
+            .collect::<Result<Vec<String>>>()?)
+    }
+    /// Reads an array of strings. If len is none the reader will determine the length by reading it.
+    fn read_str_array(&mut self, len: Option<usize>) -> Result<Vec<String>> {
+        let len = len.unwrap_or_else(|| self.read_array_len().unwrap());
+        Ok((0..len)
+            .map(|_| self.read_str(None))
+            .collect::<Result<Vec<String>>>()?)
+    }
+    /// Reads an array of bytes. If len is none the reader will determine the length by reading it.
+    fn read_bytes_array(&mut self, len: Option<usize>) -> Result<Vec<Vec<u8>>> {
+        let len = len.unwrap_or_else(|| self.read_array_len().unwrap());
+        Ok((0..len)
+            .map(|_| self.read_bytes(None))
+            .collect::<Result<Vec<Vec<u8>>>>()?)
+    }
 }
 
-macro_rules! build_read_fn_generic {
+pub trait BinaryReadAlign: BinaryRead + Seek {
+    /// Align the reader to the given alignment and return the aligned position.
+    fn align(&mut self, alignment: usize) -> Result<usize>;
+    /// Align the reader to 4 bytes.
+    fn align4(&mut self) -> Result<usize> {
+        self.align(4)
+    }
+    /// Align the reader to 8 bytes.
+    fn align8(&mut self) -> Result<usize> {
+        self.align(8)
+    }
+    /// Align the reader to 16 bytes.
+    fn align16(&mut self) -> Result<usize> {
+        self.align(16)
+    }
+}
+
+// =================================================================================================
+//
+// Method implementation macros for BinaryReader structs
+//
+// =================================================================================================
+
+macro_rules! implement_generic_methods {
     () => {
-        fn read_bool(&mut self) -> Result<bool> {
-            return Ok(self.read_u8()? != 0);
-        }
-        fn read_char(&mut self) -> Result<char> {
-            return Ok(self.read_u8()? as char);
-        }
-        fn read_cstr(&mut self) -> Result<String> {
-            let mut buf: Vec<u8> = Vec::new();
-            let mut c: u8;
-            loop {
-                c = self.read_u8()?;
-                if c == 0 {
-                    break;
-                }
-                buf.push(c as u8);
-            }
-            Ok(String::from_utf8(buf).unwrap())
-        }
-        fn read_str(&mut self, len: Option<usize>) -> Result<String> {
-            Ok(String::from_utf8(self.read_bytes(len)?).unwrap())
+        fn read_u8(&mut self) -> Result<u8> {
+            self.inner.read_u8()
         }
 
-        fn read_bytes(&mut self, len: Option<usize>) -> Result<Vec<u8>> {
-            let str_len;
-            if len.is_none() {
-                str_len = self.read_u32()? as usize;
-            } else {
-                str_len = len.unwrap();
-            }
-            let mut buf = vec![0u8; str_len];
+        fn read_u8_array(&mut self, len: Option<usize>) -> Result<Vec<u8>> {
+            let len = len.unwrap_or_else(|| self.read_array_len().unwrap());
+            let mut buf = vec![0u8; len];
             self.inner.read_exact(&mut buf)?;
             Ok(buf)
         }
 
-        fn read_f16(&mut self) -> Result<f32> {
-            Ok(f16::from_bits(self.read_u16()?).to_f32())
+        fn read_i8(&mut self) -> Result<i8> {
+            self.inner.read_i8()
         }
 
-        build_read_array_fn!(read_bool_array, read_bool, bool);
-        build_read_array_fn!(read_char_array, read_char, char);
-        build_read_array_fn!(read_f16_array, read_f16, f32);
-        build_read_array_fn!(read_cstr_array, read_cstr, String);
-        build_read_array_fn_arg!(read_str_array, read_str, String);
-        build_read_array_fn_arg!(read_bytes_array, read_bytes, Vec<u8>);
+        fn read_i8_array(&mut self, len: Option<usize>) -> Result<Vec<i8>> {
+            let len = len.unwrap_or_else(|| self.read_array_len().unwrap());
+            let mut buf = vec![0i8; len];
+            self.inner.read_i8_into(&mut buf)?;
+            Ok(buf)
+        }
+
+        fn read_array_len(&mut self) -> Result<usize> {
+            Ok(self.read_u32()? as usize)
+        }
     };
 }
 
-macro_rules! build_read_fn_ve {
-    ($type:ty) => {
+/// Implement a read and read_array method for a type with the given from_(b/l)e_bytes method.
+macro_rules! implement_read_e_method {
+    ($endian:expr, $type:ty) => {
         paste::item! {
             fn [< read_ $type >] (&mut self) -> Result<$type> {
-                let mut buf = [0u8; std::mem::size_of::<$type>()];
-                self.inner.read_exact(&mut buf)?;
+                self.inner.[<read_ $type>]::<$endian>()
+            }
+        }
+        paste::item! {
+            fn [< read_ $type _array >] (&mut self, len: Option<usize>) -> Result<Vec<$type>> {
+                let len = len.unwrap_or_else(|| self.read_array_len().unwrap());
+                let mut ret: Vec<$type> = Vec::with_capacity(len);
+                self.inner.[<read_ $type _into>]::<$endian>(ret.as_mut_slice()).unwrap();
+                Ok(ret)
+            }
+        }
+    };
+
+    ($endian:expr, $($typ:ty),+) => (
+        $(implement_read_e_method!($endian, $typ);)+
+    )
+}
+
+/// Implement a read and read_array method for a type with a variable endian.
+macro_rules! implement_read_ve_method {
+    ($type:ty) => {
+        // implement read_$type
+        paste::item! {
+            fn [< read_ $type >] (&mut self) -> Result<$type> {
                 match self.endian {
-                    Endian::Little => Ok(<$type>::from_le_bytes(buf)),
-                    Endian::Big => Ok(<$type>::from_be_bytes(buf)),
+                    Endian::Little => self.inner.[<read_ $type>]::<LittleEndian>(),
+                    Endian::Big => self.inner.[<read_ $type>]::<BigEndian>(),
                 }
             }
         }
         paste::item! {
             fn [< read_ $type _array >] (&mut self, len: Option<usize>) -> Result<Vec<$type>> {
-                let array_len;
-                if len.is_none() {
-                    array_len = self.read_u32()? as usize;
-                } else {
-                    array_len = len.unwrap();
-                }
-                let raw_len = array_len * std::mem::size_of::<$type>();
-                let raw_buf = vec![0u8; raw_len];
-                let mut buf: Vec<$type> = Vec::with_capacity(array_len);
+                let len = len.unwrap_or_else(|| self.read_array_len().unwrap());
+                let mut ret: Vec<$type> = Vec::with_capacity(len);
                 match self.endian {
                     Endian::Little => {
-                        for i in 0..array_len {
-                            let start = i * std::mem::size_of::<$type>();
-                            let end = start + std::mem::size_of::<$type>();
-                            let slice = &raw_buf[start..end];
-                            buf[i] = <$type>::from_le_bytes(slice.try_into().unwrap());
-                        }
+                        self.inner.[<read_ $type _into>]::<LittleEndian>(ret.as_mut_slice()).unwrap();
                     }
                     Endian::Big => {
-                        for i in 0..array_len {
-                            let start = i * std::mem::size_of::<$type>();
-                            let end = start + std::mem::size_of::<$type>();
-                            let slice = &raw_buf[start..end];
-                            buf[i] = <$type>::from_be_bytes(slice.try_into().unwrap());
-                        }
+                        self.inner.[<read_ $type _into>]::<BigEndian>(ret.as_mut_slice()).unwrap();
                     }
                 }
-                Ok(buf)
+                Ok(ret)
             }
+        }
+    };
+
+    ($($typ:ty),+) => (
+        $(implement_read_ve_method!($typ);)+
+    )
+}
+
+macro_rules! generate_BinaryReaderE {
+    ($name: ident, $byteorder: ident) => {
+        pub struct $name<R> {
+            pub inner: R,
+        }
+
+        impl<R: Read> $name<R> {
+            pub fn new(inner: R) -> Self {
+                Self { inner }
+            }
+        }
+
+        impl<R: Read> BinaryRead for $name<R> {
+            implement_generic_methods!();
+            implement_read_e_method!($byteorder, u16, u32, u64, i16, i32, i64, f32, f64);
         }
     };
 }
 
-pub struct BinaryReaderVE<R> {
-    pub inner: R,
-    pub endian: Endian,
-}
-
-impl<R: Read> BinaryReaderVE<R> {
-    pub fn new(inner: R, endian: Endian) -> Self {
-        Self { inner, endian }
-    }
-}
-
-impl<R: Read> BinaryReader for BinaryReaderVE<R> {
-    build_read_fn_generic!();
-    build_read_fn_ve!(u8);
-    build_read_fn_ve!(u16);
-    build_read_fn_ve!(u32);
-    build_read_fn_ve!(u64);
-
-    build_read_fn_ve!(i8);
-    build_read_fn_ve!(i16);
-    build_read_fn_ve!(i32);
-    build_read_fn_ve!(i64);
-
-    build_read_fn_ve!(f32);
-    build_read_fn_ve!(f64);
-}
-
-macro_rules! build_read_fn_le {
-    ($type:ty) => {
-        paste::item! {
-            fn [< read_ $type >] (&mut self) -> Result<$type> {
-                let mut buf = [0u8; std::mem::size_of::<$type>()];
-                self.inner.read_exact(&mut buf)?;
-                Ok(<$type>::from_le_bytes(buf))
-            }
-        }
-        paste::item! {
-            fn [< read_ $type _array >] (&mut self, len: Option<usize>) -> Result<Vec<$type>> {
-                let array_len;
-                if len.is_none() {
-                    array_len = self.read_u32()? as usize;
-                } else {
-                    array_len = len.unwrap();
-                }
-                let raw_len = array_len * std::mem::size_of::<$type>();
-                let raw_buf = vec![0u8; raw_len];
-                let mut buf: Vec<$type> = Vec::with_capacity(array_len);
-                for i in 0..array_len {
-                    let start = i * std::mem::size_of::<$type>();
-                    let end = start + std::mem::size_of::<$type>();
-                    let slice = &raw_buf[start..end];
-                    buf[i] = <$type>::from_le_bytes(slice.try_into().unwrap());
-                }
-                Ok(buf)
-            }
-        }
-    };
-}
-
-pub struct BinaryReaderLE<R> {
-    pub inner: R,
-}
-
-impl<R: Read> BinaryReaderLE<R> {
-    pub fn new(inner: R) -> Self {
-        Self { inner }
-    }
-}
-
-impl<R: Read> BinaryReader for BinaryReaderLE<R> {
-    build_read_fn_generic!();
-    build_read_fn_le!(u8);
-    build_read_fn_le!(u16);
-    build_read_fn_le!(u32);
-    build_read_fn_le!(u64);
-
-    build_read_fn_le!(i8);
-    build_read_fn_le!(i16);
-    build_read_fn_le!(i32);
-    build_read_fn_le!(i64);
-
-    build_read_fn_le!(f32);
-    build_read_fn_le!(f64);
-}
-
-macro_rules! build_read_fn_be {
-    ($type:ty) => {
-        paste::item! {
-            fn [< read_ $type >] (&mut self) -> Result<$type> {
-                let mut buf = [0u8; std::mem::size_of::<$type>()];
-                self.inner.read_exact(&mut buf)?;
-                Ok(<$type>::from_be_bytes(buf))
-            }
-        }
-        paste::item! {
-            fn [< read_ $type _array >] (&mut self, len: Option<usize>) -> Result<Vec<$type>> {
-                let array_len;
-                if len.is_none() {
-                    array_len = self.read_u32()? as usize;
-                } else {
-                    array_len = len.unwrap();
-                }
-                let raw_len = array_len * std::mem::size_of::<$type>();
-                let raw_buf = vec![0u8; raw_len];
-                let mut buf: Vec<$type> = Vec::with_capacity(array_len);
-                for i in 0..array_len {
-                    let start = i * std::mem::size_of::<$type>();
-                    let end = start + std::mem::size_of::<$type>();
-                    let slice = &raw_buf[start..end];
-                    buf[i] = <$type>::from_be_bytes(slice.try_into().unwrap());
-                }
-                Ok(buf)
-            }
-        }
-    };
-}
-
-pub struct BinaryReaderBE<R> {
-    pub inner: R,
-}
-
-impl<R: Read> BinaryReaderBE<R> {
-    pub fn new(inner: R) -> Self {
-        Self { inner }
-    }
-}
-
-impl<R: Read> BinaryReader for BinaryReaderBE<R> {
-    build_read_fn_generic!();
-    build_read_fn_be!(u8);
-    build_read_fn_be!(u16);
-    build_read_fn_be!(u32);
-
-    build_read_fn_be!(u64);
-    build_read_fn_be!(i8);
-    build_read_fn_be!(i16);
-
-    build_read_fn_be!(i32);
-    build_read_fn_be!(i64);
-
-    build_read_fn_be!(f32);
-    build_read_fn_be!(f64);
-}
-
-macro_rules! build_align_fn {
+macro_rules! implement_align_method {
     ($struct_:ident) => {
         impl<R: Seek> $struct_<R> {
             pub fn align(&mut self, alignment: usize) -> Result<()> {
@@ -343,17 +270,49 @@ macro_rules! build_align_fn {
             }
         }
     };
+
+    ($($typ:ident),+) => (
+        $(implement_align_method!($typ);)+
+    )
 }
 
-build_align_fn!(BinaryReaderLE);
-build_align_fn!(BinaryReaderBE);
-build_align_fn!(BinaryReaderVE);
+// =================================================================================================
+//
+// BinaryReader implementations
+//
+// =================================================================================================
+
+pub struct BinaryReaderVE<R> {
+    pub inner: R,
+    pub endian: Endian,
+}
+
+impl<R: Read> BinaryReaderVE<R> {
+    pub fn new(inner: R, endian: Endian) -> Self {
+        Self { inner, endian }
+    }
+}
+
+impl<R: Read> BinaryRead for BinaryReaderVE<R> {
+    implement_generic_methods!();
+    implement_read_ve_method!(u16, u32, u64, i16, i32, i64, f32, f64);
+}
+
+generate_BinaryReaderE!(BinaryReaderLE, LittleEndian);
+generate_BinaryReaderE!(BinaryReaderBE, BigEndian);
+implement_align_method!(BinaryReaderLE, BinaryReaderBE, BinaryReaderVE);
+
+// =================================================================================================
+//
+// Tests
+//
+// =================================================================================================
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::io::Cursor;
-    fn test_read_unsigned(reader: &mut impl (BinaryReader)) -> Result<()> {
+    fn test_read_unsigned(reader: &mut impl (BinaryRead)) -> Result<()> {
         assert_eq!(reader.read_u8()?, 0x1);
         assert_eq!(reader.read_u16()?, 0x1234);
         assert_eq!(reader.read_u32()?, 0x12345678);
@@ -361,7 +320,7 @@ mod tests {
         Ok(())
     }
 
-    fn test_read_signed(reader: &mut dyn BinaryReader) -> Result<()> {
+    fn test_read_signed(reader: &mut dyn BinaryRead) -> Result<()> {
         assert_eq!(reader.read_i8()?, 0x1);
         assert_eq!(reader.read_i16()?, -0x1234);
         assert_eq!(reader.read_i32()?, 0x12345678);
@@ -369,7 +328,7 @@ mod tests {
         Ok(())
     }
 
-    fn test_read_float(reader: &mut dyn BinaryReader) -> Result<()> {
+    fn test_read_float(reader: &mut dyn BinaryRead) -> Result<()> {
         assert_eq!(reader.read_f16()?, f16::from_f32(0.16).to_f32());
         assert_eq!(reader.read_f32()?, -0.32);
         assert_eq!(reader.read_f64()?, 0.64);
